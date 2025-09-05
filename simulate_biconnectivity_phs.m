@@ -10,7 +10,7 @@ use_random_init = false;  % se true, posizioni iniziali random; altrimenti layou
 N_max = 20;                 % numero totale di agenti disponibili (ID globali)
 max_event = 10;
 max_change = 10;
-[event_time, event_type, event_agent] = gen_random_events(N_max, rng_seed, T_end, max_event, max_change)
+[event_time, event_type, event_agent, history_n_agent] = gen_random_events(N_max, rng_seed, T_end, max_event, max_change);
 %event_time = [20, 30, 40]; % tempi in cui succede qualcosa
 %event_type = [-1, 1, 1 ]; % cosa succede ai nodi
 %event_agent = { [1,3], [1], [3] };  % quali agenti sono agigunti e rimossi
@@ -133,16 +133,16 @@ for k = 1:numel(t_grid)
     history_robot_position(k, :, :) = robotPosition;
 
     % --- live plot
-    figure(1);
-    plot_formation_live(robotPosition, t, event_time, event_type, event_agent);
-    plot_lambda2_live(t_grid(1:k), history_lambda2_tilde(1:k))
+    plot_formation_live(robotPosition, t, event_time, event_type, event_agent, 1);
+    plot_data(t_grid(1:k), history_lambda2_tilde(1:k), 'lambda_tilde', 2)
 
     pause(0.1);
 end
 
 %% --------------- plot finale ---------------
-%plot_formation(t_grid, history_robot_position, event_time);
-plot_lambda2_live(t_grid, history_lambda2_tilde)
+plot_formation(t_grid, history_robot_position, event_time, 2);
+plot_data(t_grid, history_lambda2_tilde, 'lamba_tilde', 3)
+plot_data(1:T_end, history_n_agent, 'agents', 4)
 
 %% --------------- Auxiliar function ---------------
 function A = buildAdjacency(X, Dgamma, dgamma, dBeta_des, sigmaBeta, dAlpha_min, Dalpha, fov_r)
@@ -203,7 +203,8 @@ function f = fovWeight(d, fov_r)
     end
 end
 
-function plot_formation(t_grid, history_robot_position, event_time)
+function plot_formation(t_grid, history_robot_position, event_time, fig_id)
+    figure(fig_id);
     % Snapshot ai tempi chiave: inizio, eventi, fine
     snap_times = unique([t_grid(1), event_time(:).', t_grid(end)]);
     nSnaps = numel(snap_times);
@@ -239,7 +240,8 @@ function plot_formation(t_grid, history_robot_position, event_time)
     end
 end
 
-function plot_formation_live(robotPosition, t, event_time, event_type, event_agent)
+function plot_formation_live(robotPosition, t, event_time, event_type, event_agent, fig_id)
+    figure(fig_id);
     clf; hold on; axis equal; grid on;
     xlabel('x'); ylabel('y');
 
@@ -267,11 +269,11 @@ function plot_formation_live(robotPosition, t, event_time, event_type, event_age
     drawnow;
 end
 
-function plot_lambda2_live(t_vec, lambda2_vec)
-    figure(2); clf; hold on; grid on;
+function plot_data(t_vec, lambda2_vec, data_type, fig_id)
+    figure(fig_id); clf; hold on; grid on;
     plot(t_vec, lambda2_vec, '-', 'LineWidth', 1.5, 'Marker','o');
-    xlabel('t'); ylabel('\lambda_2 (L)');
-    title('Algebraic connectivity (second smallest eigenvalue)');
+    xlabel('t'); ylabel(data_type);
+    title(data_type);
 
     % limiti automatici ma robusti
     if numel(t_vec) > 1
@@ -279,7 +281,8 @@ function plot_lambda2_live(t_vec, lambda2_vec)
     else
         xlim([t_vec(1)-1, t_vec(1)+1]);
     end
-    ylim auto;
+    yl = ylim;              
+    ylim([0, yl(2)]);        
     drawnow;
 end
 
@@ -421,24 +424,25 @@ function P = get_formation_squareN(N, l)
     end
 end
 
-function [event_time, event_type, event_agent] = gen_random_events(N_max, rng_seed, T_end, event_number, max_change)
+function [event_time, event_type, event_agent, history_n_agent] = gen_random_events(N_max, rng_seed, T_end, event_number, max_change)
 %GEN_RANDOM_EVENTS Generate random add/remove events with bounded changes.
 %
 % Inputs:
 %   N_max        - maximum number of agents (IDs 1..N_max)
 %   rng_seed     - RNG seed for reproducibility
-%   T_end        - simulation horizon
+%   T_end        - simulation horizon (integer)
 %   event_number - number of events to generate
 %   max_change   - maximum number of agents to add/remove in a single event
 %
 % Outputs:
-%   event_time   - times of events (1 x event_number)
-%   event_type   - signed number of agents added/removed (1 x event_number)
-%   event_agent  - cell array with agent IDs added/removed per event
+%   event_time      - times of events (1 x event_number)
+%   event_type      - signed number of agents added/removed (1 x event_number)
+%   event_agent     - cell array with agent IDs added/removed per event
+%   history_n_agent - 1 x T_end, number of active agents at each time step
 
     rng(rng_seed);
 
-    % event times
+    % event times (unique integers between 1 and T_end)
     event_time = sort(randperm(T_end, event_number));
 
     % initial state: all agents active
@@ -447,7 +451,11 @@ function [event_time, event_type, event_agent] = gen_random_events(N_max, rng_se
 
     event_type  = zeros(1, event_number);
     event_agent = cell(1, event_number);
+    history_n_agent = zeros(1, T_end);
+    history_n_agent(1:end) = N_max;
+    current_agents = N_max;
 
+    % process events
     for i = 1:event_number
         canRemove = numel(active) > 1;      % keep at least one active
         canAdd    = numel(active) < N_max;  % cannot exceed N_max
@@ -464,6 +472,9 @@ function [event_time, event_type, event_agent] = gen_random_events(N_max, rng_se
                 action = +randi(max_change);
             end
         end
+
+        current_agents = current_agents + action;
+        history_n_agent(event_time(i):end) = current_agents;
 
         ids_changed = [];
 
@@ -490,5 +501,8 @@ function [event_time, event_type, event_agent] = gen_random_events(N_max, rng_se
 
         event_agent{i} = ids_changed;
     end
+
+
 end
+
 
