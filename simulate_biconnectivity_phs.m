@@ -12,7 +12,6 @@ use_random_init = false;  % se true, posizioni iniziali random; altrimenti layou
 
 %% --------------- OMRS / TEAM SCHEDULING --------------- 
 N_max      = 5;                 % numero totale di agenti disponibili (ID globali)
-vmax  = 0.1;
 agentIDs   = 1:N_max;           % etichette globali
 N0         = N_max;                 % agenti attivi a t=0
 activeIDs0 = 1:N0;              % scelta iniziale degli ID attivi (puoi cambiarla)
@@ -35,6 +34,10 @@ F_ext = [0; 0];             % forze esterne (none per ora)
 use_energy_tanks = false;
 xt0              = 1.0;     % energia iniziale nel serbatoio (placeholder)
 eps_sync_lambda  = 1e-3;    % soglia per mismatch di sincronizzazione
+Et   = ones(N_max,1) * 1.0;   % energia iniziale per ciascun agente
+Emin = 0.1;                   % minimo consentito
+Emax = 0.5;                   % massimo consentito
+
 
 %% ---------------  CONNECTIVITY WEIGHTS (gamma, alpha, beta, fov) --------------- 
 % Raggio di comunicazione (eq. (8))
@@ -55,7 +58,7 @@ fov_r = 2.3; % distanza della circonferenza entro il quale conosce il vicino
 %% ---------------  BICONNECTIVITY CONTROLLER --------------- 
 % Potenziale e guadagno (eq. (15), (18)–(19))
 kappa        = 1.0;    % guadagno del termine F_lambda
-lambda_bar   = 0.5;    % target inferiore per biconnettività
+lambda_bar   = 0.1;    % target inferiore per biconnettività
 eps_lambda   = 0.02;   % epsilon piccolo per evitare singolarità
 
 % Perturbazione e soglie (Sec. III-B, eq. (5)–(7))
@@ -100,13 +103,17 @@ history_robot_position = nan(numel(t_grid), 5, 2);
 history_lambda2 = nan(numel(t_grid), 1);
 history_lambda2_tilde = nan(numel(t_grid), 1);
 rho_prev = ones(N_max, 1) * lambda_bar;
+lambda_bar_vec = ones(N_max, 1) * lambda_bar;
+lambda2_local = ones(N_max, 1);
+k = 1;
+eps = 1e-3;
 
 event_select = 1;
 for k = 1:numel(t_grid)
     t = t_grid(k);
 
     if t > 0
-        [robotPosition, initRobotPosition] = update_dynamics(robotPosition, initRobotPosition, t, dt, vmax,N_max);
+        [robotPosition, initRobotPosition] = update_dynamics(robotPosition, initRobotPosition, t, dt,N_max, Et, Emin, Emax, lambda2_local, lambda_bar_vec, k, eps);
     end
 
     % --- evento a questo istante?
@@ -137,8 +144,10 @@ for k = 1:numel(t_grid)
 
     % rho, eps, E e A_tilde
     %[rho, eps, E] = computeRho(robotPosition, delta, idxActive);
-    [rho_act, eps_act, E, lambda2_local] = computeRho( robotPosition, rho_prev(idxActive), A, k1, k2, sigma_lambda, delta, dt, idxActive);
+    [rho_act, eps_act, E, lambda2_local_act] = computeRho( robotPosition, rho_prev(idxActive), A, k1, k2, sigma_lambda, delta, dt, idxActive);
     rho_prev(idxActive) = rho_act;
+    lambda2_local = lambda_bar * ones(N_max, 1);   % inattivi = lambda_bar
+    lambda2_local(idxActive) = lambda2_local_act;  % attivi = valori calcolati
 
     Atilde = buildPerturbedAdjacency(A, E);
     Ltilde  = buildLaplacian(Atilde);
@@ -277,7 +286,7 @@ function plot_formation_live(robotPosition, t)
             'VerticalAlignment','middle','FontSize',9);
     end
 
-    xlim([-3 10]); ylim([-3 3]); % range fisso per non far saltare la scala
+    xlim([-3 20]); ylim([-3 3]); % range fisso per non far saltare la scala
     drawnow;
 end
 
@@ -370,12 +379,48 @@ function [rho, eps, E, lambda2_local] = computeRho(robotPosition, rho_prev, A_ac
     E   = min(eps, eps.');
 end
 
-
 function Atilde = buildPerturbedAdjacency(A, E)
     Atilde = E .* A;           % simmetrica se A ed E sono simmetriche
 end
 
-function [robotPosition, initRobotPosition] = update_dynamics(robotPosition, initRobotPosition, t, dt, vmax, N_max)
+function [v_safe, Et_new] = tank_update_vel(v_cmd, Et, dt, Emin, Emax)
+% Scala la velocità comandata v_cmd per non far scendere il serbatoio Et sotto Emin.
+% v_cmd: scalare o vettore riga/colonna (es. [vx vy])
+% Et:    energia corrente del tank (scalare)
+% dt:    passo
+% Emin, Emax: limiti del tank
+%
+% Output:
+% v_safe: velocità (stessa forma di v_cmd) dopo scaling
+% Et_new: energia aggiornata
+
+    % Assicura vettore colonna per il calcolo, poi ripristina la forma
+    origSize = size(v_cmd);
+    v = v_cmd(:);
+
+    % "potenza" ~ ||v||^2
+    p = sum(v.^2);
+    Et_new = Et - p*dt;
+
+    if Et_new < Emin && p > 0
+        % Fattore minimo per non scendere sotto Emin
+        s = max(0, min(1, (Et - Emin) / (p*dt)));
+        v = s * v;
+        % Ricalcola drenaggio con v scalata
+        p2 = sum(v.^2);
+        Et_new = Et - p2*dt;
+    end
+
+    % Clip superiore
+    if Et_new > Emax
+        Et_new = Emax;
+    end
+
+    % Ripristina forma originale
+    v_safe = reshape(v, origSize);
+end
+
+function [robotPosition, initRobotPosition] = update_dynamics(robotPosition, initRobotPosition, t, dt, N_max, Et, Emin, Emax, lambda_cur, lambda_bar, k, eps)
     % Aggiorna le posizioni: x_i <- x_i + v_i(t)*dt
     % v_i(t) = vmax * (cos(t + phi_i) + 1)
     % Solo agenti attivi (righe non-NaN). Si muove lungo x, y invariata.
@@ -383,18 +428,24 @@ function [robotPosition, initRobotPosition] = update_dynamics(robotPosition, ini
     active = all(~isnan(robotPosition), 2);
     ids = find(active);
 
-    for id = ids.'
-        current_phase_offset = id*(2/5);
-        v = cos(t + current_phase_offset) + 1;   % velocità scalare
-        v = min(max(v, 0), vmax); % clamp tra 0 e vmax
-        robotPosition(id,1) = robotPosition(id,1) + v * dt;  % muovi lungo x
-        % robotPosition(id,2) = robotPosition(id,2);   % y invariata
-    end
-
     for i = 1:N_max
-        current_phase_offset = id*(2/5);
+        current_phase_offset = i*(2/5);
         v = cos(t + current_phase_offset) + 1;   % velocità scalare
-        v = min(max(v, 0), vmax); % clamp tra 0 e vmax
-        initRobotPosition(i, 1) = initRobotPosition(i, 1) + v * dt; 
+        v = min(max(v, 0), 0.1);
+        lambda_cur
+        lambda_bar
+        Vp = storageFunction(lambda_cur(i) + eps, lambda_bar(i));
+        Vm = storageFunction(lambda_cur(i) - eps, lambda_bar(i));
+        dVdl = (Vp - Vm) / (2*eps);
+    
+        % legge di velocità comune (puoi personalizzare per-agente se serve)
+        v = -k * dVdl;
+        [v_safe, Et(i)] = tank_update_vel(v, Et(i), dt, Emin, Emax);
+        robotPosition(i,1) = robotPosition(i,1) + v_safe * dt;  % muovi lungo x
+        initRobotPosition(i, 1) = initRobotPosition(i, 1) + v_safe * dt; 
     end
+end
+
+function dV = storageFunction(lambda_cur, lambda_bar)
+    dV = coth(lambda_cur - lambda_bar) + 1;
 end
