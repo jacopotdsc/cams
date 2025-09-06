@@ -7,9 +7,16 @@ rng_seed   = 42;          % seed per riproducibilità (uso solo per posizioni/ID
 use_random_init = false;  % se true, posizioni iniziali random; altrimenti layout deterministico
 
 %% --------------- OMRS / TEAM SCHEDULING --------------- 
-N_max = 20;                 % numero totale di agenti disponibili (ID globali)
-max_event = 10;
-max_change = 10;
+
+l = 1.2; % 1, 1.2, 1.5
+%robotPosition = get_formation_squareN(N_max, l);    
+%robotPosition = [-l, -l; l, -l; l, l; -l, l; 0, 0];
+robotPosition = [ 0, 0; 0, -l; 0, l; l, 0; -l, 0];
+%robotPosition = [-l, -l; l, -l; l, l; -l, l; 0, 0; 0, -l; 0, l; l, 0; -l, 0];
+
+N_max = size(robotPosition, 1);                 % numero totale di agenti disponibili (ID globali)
+max_event = 3;
+max_change = 2;
 [event_time, event_type, event_agent, history_n_agent] = gen_random_events(N_max, rng_seed, T_end, max_event, max_change);
 %event_time = [20, 30, 40]; % tempi in cui succede qualcosa
 %event_type = [-1, 1, 1 ]; % cosa succede ai nodi
@@ -45,7 +52,7 @@ dBeta_des  = 0.9;      % distanza desiderata
 sigmaBeta  = (0.8)^2;  % larghezza del "bump" gaussiano
 
 % Field-of-View (eq. (12)–(13))
-fov_r = 2.3; % distanza della circonferenza entro il quale conosce il vicino
+fov_r = 2; % distanza della circonferenza entro il quale conosce il vicino
 
 %% ---------------  BICONNECTIVITY CONTROLLER --------------- 
 % Potenziale e guadagno (eq. (15), (18)–(19))
@@ -71,8 +78,6 @@ rho0         = 0.0;   % inizializzazione per gli attivi
 %% --------------- formation ---------------
 
 %% --------------- initialization ---------------
-l = 1;
-robotPosition = get_formation_squareN(N_max, l);    %[-l, -l; l, -l; l, l; -l, l; 0, 0];
 
 %% --------------- main ---------------
 initRobotPosition = robotPosition;
@@ -110,7 +115,7 @@ for k = 1:numel(t_grid)
 
     % --- Builing matrix on active robots
     idxActive = find(all(~isnan(robotPosition), 2));
-    A = buildAdjacency(robotPosition(idxActive, :), Dgamma, dgamma, dBeta_des, sigmaBeta, dAlpha_min, Dalpha, fov_r);
+    A = buildAdjacency(robotPosition(idxActive, :), Dgamma, dgamma, dBeta_des, sigmaBeta, dAlpha_min, Dalpha, fov_r)
 
      % --- Laplacian and lambda2
     L = buildLaplacian(A);
@@ -133,24 +138,24 @@ for k = 1:numel(t_grid)
     history_robot_position(k, :, :) = robotPosition;
 
     % --- live plot
-    plot_formation_live(robotPosition, t, event_time, event_type, event_agent, 1);
-    plot_data(t_grid(1:k), history_lambda2_tilde(1:k), 'lambda_tilde', 2)
+    %plot_formation_live(robotPosition, t, event_time, event_type, event_agent, 1);
+    %plot_data(t_grid(1:k), history_lambda2_tilde(1:k), 'lambda_tilde', 2)
 
-    pause(0.1);
+    %pause(0.1);
 end
 
 %% --------------- plot finale ---------------
 plot_formation(t_grid, history_robot_position, event_time, 2);
 plot_data(t_grid, history_lambda2_tilde, 'lamba_tilde', 3)
-plot_data(1:T_end, history_n_agent, 'agents', 4)
+%plot_data(1:T_end, history_n_agent, 'agents', 4)
 
 %% --------------- Auxiliar function ---------------
 function A = buildAdjacency(X, Dgamma, dgamma, dBeta_des, sigmaBeta, dAlpha_min, Dalpha, fov_r)
     N = size(X,1);
     A = zeros(N);
 
-    for i = 1:N-1
-        for j = i+1:N
+    for i = 1:N
+        for j = 1:N
             dij = norm(X(i,:) - X(j,:));
 
             g  = gammaWeight(dij, Dgamma, dgamma);
@@ -158,7 +163,8 @@ function A = buildAdjacency(X, Dgamma, dgamma, dBeta_des, sigmaBeta, dAlpha_min,
             av = alphaWeight(dij, dAlpha_min, Dalpha);
             f  = fovWeight(dij, fov_r);
 
-            aij = g * b * av * f;   % peso finale
+            aij = g * b * av * f;  
+
             A(i,j) = aij;
             A(j,i) = aij;
         end
@@ -172,8 +178,7 @@ function g = gammaWeight(d, Dgamma, dgamma)
     elseif d <= dgamma
         g = 1.0;
     else
-        tau = (d - dgamma) / (Dgamma - dgamma);   % in [0,1]
-        g   = 0.5 * (1 + cos(pi * tau));          % 1 -> 0 in modo smooth
+        g = 0.5;
     end
 end
 
@@ -265,7 +270,7 @@ function plot_formation_live(robotPosition, t, event_time, event_type, event_age
             'VerticalAlignment','middle','FontSize',9);
     end
 
-    xlim([-3 20]); ylim([-3 3]); 
+    xlim([-3 3]); ylim([-3 3]); 
     drawnow;
 end
 
@@ -327,16 +332,16 @@ function [rho, eps, E, lambda2_local] = computeRho(rho_prev, A_active, k1, k2, s
 
     Nact = size(A_active,1);
     lambda2_local = zeros(Nact,1);
-
-    for i = 1:Nact
-        Ni = find(A_active(i,:) > 0);
-        Ni(Ni == i) = [];                  % esclude i 
-        if numel(Ni) >= 2
-            A_loc = A_active(Ni, Ni);
+    
+    for i = 1:Nact     
+        idx = true(Nact,1);
+        idx(i) = false;
+        A_loc = A_active(idx, idx);
+        if size(A_loc,1) >= 3
             L_loc = buildLaplacian(A_loc);
             lambda2_local(i) = computeSecondSmallestEigenvalue(L_loc);
         else
-            lambda2_local(i) = 0;          % not locally biconnected
+            lambda2_local(i) = 0;   
         end
     end
 
@@ -365,7 +370,7 @@ function [robotPosition, initRobotPosition] = update_dynamics(robotPosition, ini
     for i = 1:N_max
         current_phase_offset = i*(2/5);
         v = cos(t + current_phase_offset) + 1;  
-        v_safe = min(max(v, 0), 0.1);
+        v_safe = 0.0; % min(max(v, 0), 0.1);
         robotPosition(i,1) = robotPosition(i,1) + v_safe * dt;  % move along x
         initRobotPosition(i, 1) = initRobotPosition(i, 1) + v_safe * dt; 
     end
@@ -504,5 +509,4 @@ function [event_time, event_type, event_agent, history_n_agent] = gen_random_eve
 
 
 end
-
 
