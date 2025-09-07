@@ -14,10 +14,14 @@ rng_seed   = 42;          % seed for reproducibility
 %% --------------- OMRS / TEAM SCHEDULING --------------- 
 use_fixed = false;
 formation_type = 1; % 1, 2, 3
-l = 1.5; % 1, 1.2, 1.5 
+l = 1; % 1, 1.2, 1.5 
 formations = {[-l, -l; l, -l; l, l; -l, l; 0, 0], [ 0, 0; 0, -l; 0, l; l, 0; -l, 0], [-l, -l; l, -l; l, l; -l, l; 0, 0; 0, -l; 0, l; l, 0; -l, 0] };
 robotPosition = formations{formation_type};
-robotPosition = spawnAgents(20, 1);
+%robotPosition = spawnAgentsCircle(15, 0.5);
+%robotPosition = spawnAgentsEllipse(10, 2, 5);
+%robotPosition = spawnAgentsCrown(50, 3, 5);
+%robotPosition = spawnAgentsGaussian(20, [0, 0] , eye(2) );
+
 
 N_max = size(robotPosition, 1);   
 if use_fixed == false
@@ -41,7 +45,7 @@ Dgamma   = 2.3;  % MAX range (beyond is 0 )
 dgamma   = 1;    % Min range ( within is 1 )
 
 % Collision avoidance (eq. (10)–(11))
-dAlpha_min = 0.2;  % lower bound ( security distance )
+dAlpha_min = 0.002;  % lower bound ( security distance )
 Dalpha     = 0.5;  % upper bound ( beyond is 1 )
 
 % Formazione "soft" (eq. (9))
@@ -338,7 +342,7 @@ function [event_time, event_type, event_agent, history_n_agent] = gen_random_eve
 
 end
 
-function positions = spawnAgents(numAgents, radius)
+function positions = spawnAgentsCircle(numAgents, radius)
 
     theta = 2*pi*rand(numAgents,1);        %
     r = radius * sqrt(rand(numAgents,1)); 
@@ -347,6 +351,36 @@ function positions = spawnAgents(numAgents, radius)
     y = r .* sin(theta);
 
     positions = [x, y];
+end
+
+function positions = spawnAgentsEllipse(numAgents, a, b)
+    theta = 2*pi*rand(numAgents,1);        
+    r = sqrt(rand(numAgents,1));          
+
+    x_unit = r .* cos(theta);
+    y_unit = r .* sin(theta);
+
+    x = a * x_unit;
+    y = b * y_unit;
+
+    positions = [x, y];
+end
+
+function positions = spawnAgentsCrown(numAgents, Rmin, Rmax)
+    theta = 2*pi*rand(numAgents,1);
+    r = sqrt(rand(numAgents,1) * (Rmax^2 - Rmin^2) + Rmin^2);
+    x = r .* cos(theta);
+    y = r .* sin(theta);
+    positions = [x, y];
+end
+
+function positions = spawnAgentsGaussian(numAgents, mu, sigma)
+
+    if isscalar(sigma)
+        sigma = sigma^2 * eye(2); 
+    end
+
+    positions = mvnrnd(mu, sigma, numAgents);
 end
 
 
