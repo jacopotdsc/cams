@@ -17,7 +17,7 @@ formation_type = 1; % 1, 2, 3
 l = 1.5; % 1, 1.2, 1.5 
 formations = {[-l, -l; l, -l; l, l; -l, l; 0, 0], [ 0, 0; 0, -l; 0, l; l, 0; -l, 0], [-l, -l; l, -l; l, l; -l, l; 0, 0; 0, -l; 0, l; l, 0; -l, 0] };
 robotPosition = formations{formation_type};
-%robotPosition = spawnAgents(10, 3);
+robotPosition = spawnAgents(20, 1);
 
 N_max = size(robotPosition, 1);   
 if use_fixed == false
@@ -306,7 +306,7 @@ function [event_time, event_type, event_agent, history_n_agent] = gen_random_eve
         end
 
         current_agents = current_agents + action;
-        current_agents = min(current_agents, N_max);
+        current_agents = max(min(current_agents, N_max), 0);
         history_n_agent(event_time(i):end) = current_agents;
 
         ids_changed = [];
