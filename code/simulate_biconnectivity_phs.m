@@ -6,11 +6,10 @@
 
 
 %% --------------- SIMULATION PARAMETERS --------------- 
-T_end      = 60;          % [s] tempo finale
-dt         = 1.0;         % [s] passo di integrazione (loop: 60 iterazioni)
+T_end      = 60;          % Simulation duration
+dt         = 1.0;         % Simulation step
 t_grid     = 0:dt:T_end;  % griglia temporale
-nDim       = 2;           % lavoro in piano (x,y)
-rng_seed   = 42;          % seed per riproducibilità (uso solo per posizioni/ID random)
+rng_seed   = 42;          % seed for reproducibility
 
 %% --------------- OMRS / TEAM SCHEDULING --------------- 
 use_fixed = false;
@@ -306,6 +305,7 @@ function [event_time, event_type, event_agent, history_n_agent] = gen_random_eve
         end
 
         current_agents = current_agents + action;
+        current_agents = min(current_agents, N_max);
         history_n_agent(event_time(i):end) = current_agents;
 
         ids_changed = [];
