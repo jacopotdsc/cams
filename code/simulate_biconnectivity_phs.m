@@ -17,6 +17,7 @@ formation_type = 1; % 1, 2, 3
 l = 1.5; % 1, 1.2, 1.5 
 formations = {[-l, -l; l, -l; l, l; -l, l; 0, 0], [ 0, 0; 0, -l; 0, l; l, 0; -l, 0], [-l, -l; l, -l; l, l; -l, l; 0, 0; 0, -l; 0, l; l, 0; -l, 0] };
 robotPosition = formations{formation_type};
+%robotPosition = spawnAgents(10, 3);
 
 N_max = size(robotPosition, 1);   
 if use_fixed == false
@@ -336,6 +337,18 @@ function [event_time, event_type, event_agent, history_n_agent] = gen_random_eve
 
 
 end
+
+function positions = spawnAgents(numAgents, radius)
+
+    theta = 2*pi*rand(numAgents,1);        %
+    r = radius * sqrt(rand(numAgents,1)); 
+
+    x = r .* cos(theta);
+    y = r .* sin(theta);
+
+    positions = [x, y];
+end
+
 
 function plot_formation(t_grid, history_robot_position, event_time, fig_id)
     figure(fig_id);
